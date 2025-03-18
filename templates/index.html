@@ -34,7 +34,7 @@
                 video.srcObject = stream;
 
                 video.onloadedmetadata = () => {
-                    console.log("📷 Камера запущена:", video.videoWidth, "x", video.videoHeight);
+                    console.log("📷 Камера включена:", video.videoWidth, "x", video.videoHeight);
                     scanning = true;
                     scanQRCode();
                 };
@@ -45,7 +45,7 @@
         }
 
         function scanQRCode() {
-            if (!scanning) return; // Ожидание перед повторным сканированием
+            if (!scanning || !video.videoWidth) return;
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -53,8 +53,9 @@
 
             let imageData = context.getImageData(0, 0, canvas.width, canvas.height);
 
-            if (!imageData || imageData.width === 0 || imageData.height === 0) {
-                console.warn("❌ Ошибка: Не удалось получить изображение с камеры.");
+            // ✅ Проверка, чтобы избежать ошибки с `undefined height`
+            if (!imageData || !imageData.data || imageData.width === 0 || imageData.height === 0) {
+                console.warn("❌ Ошибка: Пустое изображение с камеры.");
                 setTimeout(scanQRCode, 500);
                 return;
             }
@@ -62,7 +63,7 @@
             let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "onlyInvert" });
 
             if (code) {
-                scanning = false; // Останавливаем сканирование на 1.5 сек
+                scanning = false;
                 console.log("✅ QR-код найден:", code.data);
                 resultText.innerText = "✅ QR-код найден, проверяем...";
 
@@ -73,30 +74,22 @@
                 })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.message.includes("Гость")) {
-                        resultText.innerText = data.message;
-                    } else {
-                        resultText.innerText = "❌ Ошибка: " + data.message;
-                    }
-
+                    resultText.innerText = data.message;
+                    
                     // Ждём 1.5 секунды перед повторным сканированием
                     setTimeout(() => {
-                        if (!scanning) {
-                            scanning = true;
-                            resultText.innerText = "Ожидание сканирования...";
-                            scanQRCode();
-                        }
+                        scanning = true;
+                        resultText.innerText = "Ожидание сканирования...";
+                        scanQRCode();
                     }, 1500);
                 })
                 .catch(error => {
                     console.error("❌ Ошибка отправки данных:", error);
                     errorText.innerText = "❌ Ошибка отправки данных!";
                     setTimeout(() => {
-                        if (!scanning) {
-                            scanning = true;
-                            resultText.innerText = "Ожидание сканирования...";
-                            scanQRCode();
-                        }
+                        scanning = true;
+                        resultText.innerText = "Ожидание сканирования...";
+                        scanQRCode();
                     }, 1500);
                 });
             } else {
