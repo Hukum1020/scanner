@@ -1,7 +1,7 @@
 import os
 import json
 import gspread
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
@@ -14,18 +14,15 @@ CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 if not CREDENTIALS_JSON:
     raise ValueError("❌ Ошибка: GOOGLE_CREDENTIALS_JSON не найдено!")
 
-try:
-    creds_dict = json.loads(CREDENTIALS_JSON)
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-except Exception as e:
-    raise ValueError(f"❌ Ошибка подключения к Google Sheets: {e}")
+creds_dict = json.loads(CREDENTIALS_JSON)
+creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+client = gspread.authorize(creds)
+sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
 @app.route("/")
 def home():
-    return "QR Check-in System is running!", 200
+    return render_template("index.html")  # Теперь фронтенд отдается через Flask
 
 @app.route("/check-in", methods=["POST"])
 def check_in():
@@ -36,7 +33,7 @@ def check_in():
         if not qr_data:
             return jsonify({"message": "❌ Ошибка: пустые данные QR-кода!"}), 400
 
-        # Разбираем данные QR-кода (ожидается формат с Email)
+        # Извлекаем Email из QR-кода
         lines = qr_data.split("\n")
         email = None
         for line in lines:
@@ -47,7 +44,7 @@ def check_in():
         if not email:
             return jsonify({"message": "❌ Ошибка: не удалось извлечь Email из QR-кода!"}), 400
 
-        # Читаем все строки из таблицы
+        # Проверяем гостя в Google Sheets
         all_values = sheet.get_all_values()
         found = False
 
