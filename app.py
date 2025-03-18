@@ -1,7 +1,7 @@
 import os
 import json
 import gspread
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
@@ -22,7 +22,7 @@ sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
 @app.route("/")
 def home():
-    return render_template("index.html")  # Теперь фронтенд отдается через Flask
+    return "QR Check-in System is running!", 200
 
 @app.route("/check-in", methods=["POST"])
 def check_in():
@@ -44,13 +44,13 @@ def check_in():
         if not email:
             return jsonify({"message": "❌ Ошибка: не удалось извлечь Email из QR-кода!"}), 400
 
-        # Проверяем гостя в Google Sheets
+        # Читаем данные из Google Sheets
         all_values = sheet.get_all_values()
         found = False
 
         for i, row in enumerate(all_values):
-            if len(row) > 0 and row[0].strip() == email:  # Проверяем Email в 1-й колонке
-                sheet.update_cell(i + 1, 9, "Пришёл")  # Колонка CheckIn (J = 9)
+            if len(row) > 0 and row[0].strip() == email:  # Проверяем Email в колонке A (1)
+                sheet.update_cell(i + 1, 10, "Пришёл")  # Колонка J (10-я)
                 found = True
                 break
 
