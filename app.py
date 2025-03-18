@@ -1,7 +1,7 @@
 import os
 import json
 import gspread
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
@@ -22,7 +22,7 @@ sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
 @app.route("/")
 def home():
-    return "QR Check-in System is running!", 200
+    return render_template("index.html")
 
 @app.route("/check-in", methods=["POST"])
 def check_in():
