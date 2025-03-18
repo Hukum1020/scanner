@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QR-сканнер</title>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; }
         #video { width: 100%; max-width: 400px; }
@@ -26,7 +26,7 @@
         const context = canvas.getContext("2d");
         const resultText = document.getElementById("result");
         const errorText = document.getElementById("error");
-        let scanning = true; // Флаг для остановки сканирования после успешного чтения
+        let scanning = true; // Флаг, когда разрешено сканирование
 
         async function startScanner() {
             try {
@@ -35,7 +35,8 @@
 
                 video.onloadedmetadata = () => {
                     console.log("Камера запущена:", video.videoWidth, "x", video.videoHeight);
-                    scanQRCode(); // Запуск сканирования после загрузки камеры
+                    scanning = true;
+                    scanQRCode();
                 };
             } catch (error) {
                 console.error("Ошибка доступа к камере:", error);
@@ -44,22 +45,19 @@
         }
 
         function scanQRCode() {
-            if (!scanning) return; // Остановить сканирование после первого успешного результата
+            if (!scanning) return; // Ожидание перед повторным сканированием
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             let imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-            let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+            let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "onlyInvert" });
 
             if (code) {
-                scanning = false; // Остановить дальнейшее сканирование
-                video.srcObject.getTracks().forEach(track => track.stop()); // Остановить камеру
-
+                scanning = false; // Останавливаем сканирование на 1.5 сек
                 console.log("QR-код найден:", code.data);
-                resultText.innerText = "✅ QR-код: " + code.data;
-                errorText.innerText = "";
+                resultText.innerText = "✅ QR-код найден, проверяем...";
 
                 fetch("/check-in", {
                     method: "POST",
@@ -68,14 +66,30 @@
                 })
                 .then(response => response.json())
                 .then(data => {
-                    resultText.innerText = data.message;
+                    if (data.message.includes("Гость")) {
+                        resultText.innerText = data.message;
+                    } else {
+                        resultText.innerText = "❌ Ошибка: " + data.message;
+                    }
+                    
+                    // Ждём 1.5 секунды перед повторным сканированием
+                    setTimeout(() => {
+                        resultText.innerText = "Ожидание сканирования...";
+                        scanning = true; // Возвращаем разрешение на сканирование
+                        scanQRCode();
+                    }, 1500);
                 })
                 .catch(error => {
                     console.error("Ошибка:", error);
                     errorText.innerText = "❌ Ошибка отправки данных!";
+                    setTimeout(() => {
+                        resultText.innerText = "Ожидание сканирования...";
+                        scanning = true;
+                        scanQRCode();
+                    }, 1500);
                 });
             } else {
-                setTimeout(scanQRCode, 500); // Повторное сканирование каждые 500 мс
+                setTimeout(scanQRCode, 500); // Если код не найден, проверяем через 0.5 секунды
             }
         }
 
