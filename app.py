@@ -1,67 +1,88 @@
-import os
-import json
-import gspread
-from flask import Flask, request, jsonify, render_template
-from oauth2client.service_account import ServiceAccountCredentials
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR-сканнер</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #video { width: 100%; max-width: 400px; }
+        canvas { display: none; }
+        #result { font-size: 18px; margin-top: 10px; color: green; }
+        #error { font-size: 16px; color: red; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h2>Сканируйте QR-код</h2>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <p id="result">Ожидание сканирования...</p>
+    <p id="error"></p>
 
-app = Flask(__name__)
+    <script>
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const context = canvas.getContext("2d");
+        const resultText = document.getElementById("result");
+        const errorText = document.getElementById("error");
 
-# Подключение к Google Sheets
-SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+        async function startScanner() {
+            try {
+                // Запрашиваем доступ к камере (задняя, если доступно)
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                video.srcObject = stream;
 
-CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
-if not CREDENTIALS_JSON:
-    raise ValueError("❌ Ошибка: GOOGLE_CREDENTIALS_JSON не найдено!")
+                video.onloadedmetadata = () => {
+                    console.log("Камера запущена:", video.videoWidth, "x", video.videoHeight);
+                    // Начинаем циклическое сканирование каждые 1.5 секунды
+                    scanQRCode();
+                };
+            } catch (error) {
+                console.error("Ошибка доступа к камере:", error);
+                errorText.innerText = "❌ Ошибка доступа к камере! Разрешите доступ в настройках браузера.";
+            }
+        }
 
-creds_dict = json.loads(CREDENTIALS_JSON)
-creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-client = gspread.authorize(creds)
-sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+        function scanQRCode() {
+            // Захватываем кадр с камеры
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+            let imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
 
-@app.route("/check-in", methods=["POST"])
-def check_in():
-    try:
-        data = request.json
-        qr_data = data.get("qr_data")
+            if (code) {
+                console.log("QR-код найден:", code.data);
+                resultText.innerText = "✅ QR-код: " + code.data;
+                errorText.innerText = "";
 
-        if not qr_data:
-            return jsonify({"message": "❌ Ошибка: пустые данные QR-кода!"}), 400
+                // Отправляем данные на сервер (при необходимости)
+                fetch("/check-in", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ qr_data: code.data })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Выводим ответ сервера
+                    resultText.innerText = data.message;
+                })
+                .catch(error => {
+                    console.error("Ошибка:", error);
+                    errorText.innerText = "❌ Ошибка отправки данных!";
+                });
+            } else {
+                console.log("QR-код не найден, продолжаем сканирование...");
+            }
 
-        # Извлекаем Email из QR-кода
-        lines = qr_data.split("\n")
-        email = None
-        for line in lines:
-            if "Email:" in line:
-                email = line.replace("Email:", "").strip()
-                break
+            // Повторяем сканирование через 1.5 секунды
+            setTimeout(scanQRCode, 1500);
+        }
 
-        if not email:
-            return jsonify({"message": "❌ Ошибка: не удалось извлечь Email из QR-кода!"}), 400
-
-        # Читаем данные из Google Sheets
-        all_values = sheet.get_all_values()
-        found = False
-
-        for i, row in enumerate(all_values):
-            if len(row) > 1 and row[1].strip().lower() == email.lower():  # Проверяем Email в колонке B (2)
-                sheet.update_cell(i + 1, 10, "Пришёл")  # Колонка J (10-я)
-                found = True
-                break
-
-        if found:
-            return jsonify({"message": f"✅ Гость {email} отмечен как 'Пришёл'"}), 200
-        else:
-            return jsonify({"message": "❌ Гость не найден в системе!"}), 404
-
-    except Exception as e:
-        return jsonify({"message": f"❌ Ошибка обработки: {e}"}), 500
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+        // Запуск сканера
+        startScanner();
+    </script>
+</body>
+</html>
