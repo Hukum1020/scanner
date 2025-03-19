@@ -49,7 +49,7 @@ def check_in():
         found = False
 
         for i, row in enumerate(all_values):
-            if len(row) > 0 and row[0].strip() == email:  # Проверяем Email в колонке A (1)
+            if len(row) > 1 and row[1].strip().lower() == email.lower():  # Проверяем Email в колонке B (2)
                 sheet.update_cell(i + 1, 10, "Пришёл")  # Колонка J (10-я)
                 found = True
                 break
